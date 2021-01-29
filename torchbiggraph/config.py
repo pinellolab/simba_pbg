@@ -1,10 +1,7 @@
-#!/usr/bin/env python3
+"""Configuration module for simba
 
-# Copyright (c) Facebook, Inc. and its affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE.txt file in the root directory of this source tree.
+Modified from module 'config'
+"""
 
 import argparse
 import importlib
@@ -583,33 +580,35 @@ class ConfigFileLoader:
     imports them from there.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, params) -> None:
         self.config_dir = tempfile.TemporaryDirectory(  # noqa
             prefix="torchbiggraph_config_"
         )
         # Hold a reference because at destruction time it may not be available anymore.
         self.sys_path = sys.path
         self.sys_path.append(self.config_dir.name)
+        self.params = params
 
     def __del__(self) -> None:
         self.sys_path.remove(self.config_dir.name)
         self.config_dir.cleanup()
 
     def load_raw_config(
-        self, path: str, overrides: Optional[List[List[str]]] = None
+        self, overrides: Optional[List[List[str]]] = None
     ) -> Any:
-        module_name = f"torchbiggraph_config_{uuid.uuid4().hex}"
-        shutil.copyfile(path, os.path.join(self.config_dir.name, f"{module_name}.py"))
-        importlib.invalidate_caches()
-        module = importlib.import_module(module_name)
-        raw_config = module.get_torchbiggraph_config()
+        # module_name = f"torchbiggraph_config_{uuid.uuid4().hex}"
+        # shutil.copyfile(path, os.path.join(self.config_dir.name, f"{module_name}.py"))
+        # importlib.invalidate_caches()
+        # module = importlib.import_module(module_name)
+        # raw_config = module.get_torchbiggraph_config()
+        raw_config = self.params
         config_with_overrides = override_config_dict(raw_config, overrides)
         return config_with_overrides
 
     def load_config(
-        self, path: str, overrides: Optional[List[List[str]]] = None
+        self, overrides: Optional[List[List[str]]] = None
     ) -> ConfigSchema:
-        config_dict = self.load_raw_config(path, overrides=overrides)
+        config_dict = self.load_raw_config(overrides=overrides)
         config = parse_config(config_dict)
         return config
 
