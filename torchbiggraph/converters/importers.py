@@ -198,7 +198,7 @@ def generate_entity_path_files(
     if dynamic_relations:
         log("- Writing count of dynamic relations")
         relation_type_storage.save_count(relation_types.size())
-        relation_type_storage.save_names(relation_types.get_list())
+    relation_type_storage.save_names(relation_types.get_list())
 
 
 def generate_edge_path_files_fast(
