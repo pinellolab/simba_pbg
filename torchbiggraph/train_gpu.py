@@ -479,6 +479,7 @@ class GPUTrainingCoordinator(TrainingCoordinator):
         edges_lhs = edges.lhs.tensor
         edges_rhs = edges.rhs.tensor
         edges_rel = edges.rel
+        assert edges.weight is None, "Edge weights not implemented in GPU mode yet"
         if eval_edge_idxs is not None:
             bucket_logger.debug("Removing eval edges")
             tk.start("remove_eval")
