@@ -34,7 +34,7 @@ class EdgeList:
             cat_weight = torch.cat([el.weight.expand((len(el),)) for el in edge_lists])
         else:
             cat_weight = None
-        
+
         if all(el.has_scalar_relation_type() for el in edge_lists):
             rel_types = {el.get_relation_type_as_scalar() for el in edge_lists}
             if len(rel_types) == 1:
@@ -78,7 +78,7 @@ class EdgeList:
                 "%d != %d" % (rel.shape[0], len(lhs))
             )
 
-        if weight is not None and weight.is_empty():
+        if weight is not None and (weight.nelement() == 0):
             weight = None
 
         if weight is not None:

@@ -129,7 +129,9 @@ def collect_relation_types(
         log("Looking up relation types in the edge files...")
         counter: Counter[str] = Counter()
         for edgepath in edge_paths:
-            for _lhs_word, _rhs_word, rel_word, _weight in edgelist_reader.read(edgepath):
+            for _lhs_word, _rhs_word, rel_word, _weight_word in edgelist_reader.read(
+                edgepath
+            ):
                 if rel_word is None:
                     raise RuntimeError("Need to specify rel_col in dynamic mode.")
                 counter[rel_word] += 1
