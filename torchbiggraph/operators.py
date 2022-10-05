@@ -56,6 +56,15 @@ class IdentityOperator(AbstractOperator):
     def get_operator_params_for_reg(self) -> Optional[FloatTensorType]:
         return None
 
+@OPERATORS.register_as("fix")
+class FixOperator(AbstractOperator):
+    # Detach node tensor that the loss isn't propagated to the node embedding.
+    def forward(self, embeddings: FloatTensorType) -> FloatTensorType:
+        match_shape(embeddings, ..., self.dim)
+        return embeddings.clone().detach()
+
+    def get_operator_params_for_reg(self) -> Optional[FloatTensorType]:
+        return None
 
 @OPERATORS.register_as("diagonal")
 class DiagonalOperator(AbstractOperator):
