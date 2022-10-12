@@ -42,8 +42,19 @@ class EdgelistReader(ABC):
 
 
 class TSVEdgelistReader(EdgelistReader):
-    def __init__(self, lhs_col: int, rhs_col: int, rel_col: int):
-        self.lhs_col, self.rhs_col, self.rel_col = lhs_col, rhs_col, rel_col
+    def __init__(
+        self,
+        lhs_col: int,
+        rhs_col: int,
+        rel_col: Optional[int] = None,
+        weight_col: Optional[int] = None,
+        delimiter: Optional[str] = None,
+    ):
+        self.lhs_col = lhs_col
+        self.rhs_col = rhs_col
+        self.rel_col = rel_col
+        self.weight_col = weight_col
+        self.delimiter = delimiter
 
     def read(self, path: Path):
         with path.open("rt") as tf:
@@ -53,7 +64,12 @@ class TSVEdgelistReader(EdgelistReader):
                     lhs_word = words[self.lhs_col]
                     rhs_word = words[self.rhs_col]
                     rel_word = words[self.rel_col] if self.rel_col is not None else None
-                    yield lhs_word, rhs_word, rel_word
+                    weight_word = (
+                        float(words[self.weight_col])
+                        if self.weight_col is not None
+                        else None
+                    )
+                    yield lhs_word, rhs_word, rel_word, weight_word
                 except IndexError:
                     raise RuntimeError(
                         f"Line {line_num} of {path} has only {len(words)} words"
@@ -61,12 +77,20 @@ class TSVEdgelistReader(EdgelistReader):
 
 
 class ParquetEdgelistReader(EdgelistReader):
-    def __init__(self, lhs_col: str, rhs_col: str, rel_col: Optional[str]):
+    def __init__(
+        self,
+        lhs_col: str,
+        rhs_col: str,
+        rel_col: Optional[str],
+        weight_col: Optional[str],
+    ):
         """Reads edgelists from a Parquet file.
-
         col arguments can either be the column name or the offset of the col.
         """
-        self.lhs_col, self.rhs_col, self.rel_col = lhs_col, rhs_col, rel_col
+        self.lhs_col = lhs_col
+        self.rhs_col = rhs_col
+        self.rel_col = rel_col
+        self.weight_col = weight_col
 
     def read(self, path: Path):
         try:
@@ -78,14 +102,19 @@ class ParquetEdgelistReader(EdgelistReader):
             )
 
         with path.open("rb") as tf:
-            columns = [self.lhs_col, self.rhs_col]
-            if self.rel_col is not None:
-                columns.append(self.rel_col)
-            for row in parquet.reader(tf, columns=columns):
-                if self.rel_col is not None:
-                    yield row
-                else:
-                    yield (row[0], row[1], None)
+            columns = [self.lhs_col, self.rhs_col, self.rel_col, self.weight_col]
+            fetch_columns = [c for c in columns if c is not None]
+            for row in parquet.reader(tf, columns=fetch_columns):
+                offset = 0
+                ret = []
+                for c in columns:
+                    if c is not None:
+                        ret.append(row[offset])
+                        offset += 1
+                    else:
+                        ret.append(None)
+
+                yield tuple(ret)
 
 
 def collect_relation_types(
@@ -100,7 +129,9 @@ def collect_relation_types(
         log("Looking up relation types in the edge files...")
         counter: Counter[str] = Counter()
         for edgepath in edge_paths:
-            for _lhs_word, _rhs_word, rel_word in edgelist_reader.read(edgepath):
+            for _lhs_word, _rhs_word, rel_word, _weight_word in edgelist_reader.read(
+                edgepath
+            ):
                 if rel_word is None:
                     raise RuntimeError("Need to specify rel_col in dynamic mode.")
                 counter[rel_word] += 1
@@ -142,7 +173,7 @@ def collect_entities_by_type(
 
     log("Searching for the entities in the edge files...")
     for edgepath in edge_paths:
-        for lhs_word, rhs_word, rel_word in edgelist_reader.read(edgepath):
+        for lhs_word, rhs_word, rel_word, _weight in edgelist_reader.read(edgepath):
             if dynamic_relations or rel_word is None:
                 rel_id = 0
             else:
@@ -215,7 +246,7 @@ def generate_edge_path_files_fast(
 
     log("Taking the fast train!")
     data = []
-    for lhs_word, rhs_word, rel_word in edgelist_reader.read(edge_file_in):
+    for lhs_word, rhs_word, rel_word, weight in edgelist_reader.read(edge_file_in):
         if rel_word is None:
             rel_id = 0
         else:
@@ -237,17 +268,19 @@ def generate_edge_path_files_fast(
             skipped += 1
             continue
 
-        data.append((lhs_offset, rhs_offset, rel_id))
+        data.append((lhs_offset, rhs_offset, rel_id, weight))
 
         processed = processed + 1
         if processed % 100000 == 0:
             log(f"- Processed {processed} edges so far...")
 
-    lhs_offsets, rhs_offsets, rel_ids = zip(*data)
+    lhs_offsets, rhs_offsets, rel_ids, weights = zip(*data)
+    weights = torch.tensor(weights) if weights[0] is not None else None
     edge_list = EdgeList(
         EntityList.from_tensor(torch.tensor(list(lhs_offsets), dtype=torch.long)),
         EntityList.from_tensor(torch.tensor(list(rhs_offsets), dtype=torch.long)),
         torch.tensor(list(rel_ids), dtype=torch.long),
+        weights,
     )
     edge_storage.save_edges(0, 0, edge_list)
 
@@ -260,6 +293,19 @@ def generate_edge_path_files_fast(
         )
 
 
+def append_to_file(data, appender):
+    lhs_offsets, rhs_offsets, rel_ids, weights = zip(*data)
+    weights = torch.tensor(weights) if weights[0] is not None else None
+    appender.append_edges(
+        EdgeList(
+            EntityList.from_tensor(torch.tensor(lhs_offsets, dtype=torch.long)),
+            EntityList.from_tensor(torch.tensor(rhs_offsets, dtype=torch.long)),
+            torch.tensor(rel_ids, dtype=torch.long),
+            weights,
+        )
+    )
+
+
 def generate_edge_path_files(
     edge_file_in: Path,
     edge_path_out: Path,
@@ -269,6 +315,7 @@ def generate_edge_path_files(
     relation_configs: List[RelationSchema],
     dynamic_relations: bool,
     edgelist_reader: EdgelistReader,
+    n_flush_edges: int = 100000,
 ) -> None:
     log(
         f"Preparing edge path {edge_path_out}, "
@@ -299,11 +346,12 @@ def generate_edge_path_files(
 
     processed = 0
     skipped = 0
-
     # We use an ExitStack in order to close the dynamically-created edge appenders.
     with ExitStack() as appender_stack:
         appenders: Dict[Tuple[int, int], AbstractEdgeAppender] = {}
-        for lhs_word, rhs_word, rel_word in edgelist_reader.read(edge_file_in):
+        data: Dict[Tuple[int, int], List[Tuple[int, int, int]]] = {}
+
+        for lhs_word, rhs_word, rel_word, weight in edgelist_reader.read(edge_file_in):
             if rel_word is None:
                 rel_id = 0
             else:
@@ -337,21 +385,22 @@ def generate_edge_path_files(
                 appenders[lhs_part, rhs_part] = appender_stack.enter_context(
                     edge_storage.save_edges_by_appending(lhs_part, rhs_part)
                 )
-            appenders[lhs_part, rhs_part].append_edges(
-                EdgeList(
-                    EntityList.from_tensor(
-                        torch.tensor([lhs_offset], dtype=torch.long)
-                    ),
-                    EntityList.from_tensor(
-                        torch.tensor([rhs_offset], dtype=torch.long)
-                    ),
-                    torch.tensor([rel_id], dtype=torch.long),
-                )
-            )
+                data[lhs_part, rhs_part] = []
+
+            part_data = data[lhs_part, rhs_part]
+            part_data.append((lhs_offset, rhs_offset, rel_id, weight))
+            if len(part_data) > n_flush_edges:
+                append_to_file(part_data, appenders[lhs_part, rhs_part])
+                part_data.clear()
 
             processed = processed + 1
             if processed % 100000 == 0:
                 log(f"- Processed {processed} edges so far...")
+
+        for (lhs_part, rhs_part), part_data in data.items():
+            if len(part_data) > 0:
+                append_to_file(part_data, appenders[lhs_part, rhs_part])
+                part_data.clear()
 
     log(f"- Processed {processed} edges in total")
     if skipped > 0:
