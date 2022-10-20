@@ -120,6 +120,23 @@ class RelationSchema(Schema):
             "one) before comparing it with the other one."
         },
     )
+    operator_l: str = attr.ib(
+        default="none",
+        metadata={
+            "help": "The transformation to apply to the embedding of one "
+            "of the sides of the edge (typically the right-hand "
+            "one) before comparing it with the other one."
+        },
+    )
+    operator_r: str = attr.ib(
+        default="none",
+        metadata={
+            "help": "The transformation to apply to the embedding of one "
+            "of the sides of the edge (typically the right-hand "
+            "one) before comparing it with the other one."
+        },
+    )
+
     all_negs: bool = attr.ib(
         default=False,
         metadata={
@@ -265,13 +282,6 @@ class ConfigSchema(Schema):
             "help": "If set, it must be a path to a directory that "
             "contains initial values for the embeddings of all "
             "the entities of some types."
-        },
-    )
-    init_entity_path: Optional[str] = attr.ib(
-        default=None,
-        metadata={
-            "help": "If set, it must be a path to a directory that "
-            "contains initial values of the entities and their offsets "
         },
     )
     checkpoint_preservation_interval: Optional[int] = attr.ib(
