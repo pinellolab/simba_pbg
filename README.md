@@ -1,3 +1,12 @@
+# Installation
+
+To install the customized PyTorch-BigGraph (PBG) package [`simba_pbg`](https://anaconda.org/bioconda/simba_pbg) for [`simba`](https://github.com/pinellolab/simba),
+
+```bash
+conda install -c bioconda simba_pbg
+```
+
+
 # ![PyTorch-BigGraph](docs/source/_static/logo_color.svg)
 
 [![CircleCI Status](https://circleci.com/gh/facebookresearch/PyTorch-BigGraph.svg?style=svg)](https://circleci.com/gh/facebookresearch/PyTorch-BigGraph) [![Documentation Status](https://readthedocs.org/projects/torchbiggraph/badge/?version=latest)](https://torchbiggraph.readthedocs.io/en/latest/?badge=latest)
