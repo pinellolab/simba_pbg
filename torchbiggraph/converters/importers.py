@@ -94,18 +94,12 @@ class ParquetEdgelistReader(EdgelistReader):
             with path.open("rb") as tf:
                 columns = [self.lhs_col, self.rhs_col]
                 if self.rel_col is not None:
-<<<<<<< HEAD
-                    yield row
-                else:
-                    yield (row[0], row[1], None)
-=======
                     columns.append(self.rel_col)
                 for row in parquet.reader(tf, columns=columns):
                     if self.rel_col is not None:
                         yield row
                     else:
                         yield row[0], row[1], None
->>>>>>> b44f6c3... * Bug fixed; recurrent training implemented
 
 
 def collect_relation_types(

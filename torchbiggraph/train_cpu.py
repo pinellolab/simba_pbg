@@ -287,16 +287,6 @@ class TrainingCoordinator:
         ] = defaultdict(set)
         for entity_type, counts in entity_counts.items():
             max_count = max(counts)
-<<<<<<< HEAD
-            num_sides = (
-                (1 if entity_type in holder.lhs_partitioned_types else 0)
-                + (1 if entity_type in holder.rhs_partitioned_types else 0)
-                + (
-                    1
-                    if entity_type
-                    in (holder.lhs_unpartitioned_types | holder.rhs_unpartitioned_types)
-                    else 0
-=======
             if holder.nparts_lhs == 1 and holder.nparts_rhs == 1:
                 num_sides = 1
             else:
@@ -312,9 +302,8 @@ class TrainingCoordinator:
                                )
                             else 0
                         )
->>>>>>> b44f6c3... * Bug fixed; recurrent training implemented
                 )
-            )
+            
             for _ in range(num_sides):
                 embedding_storage_freelist[entity_type].add(
                     allocate_shared_tensor(
@@ -641,15 +630,10 @@ class TrainingCoordinator:
                 self.model.set_all_embeddings(holder, cur_b)
 
                 current_index = (
-<<<<<<< HEAD
-                    iteration_manager.iteration_idx + 1
-                ) * total_buckets - remaining
-=======
                         (iteration_manager.iteration_idx + 1) * total_buckets
                         - remaining
                         - 1
                 )
->>>>>>> b44f6c3... * Bug fixed; recurrent training implemented
 
                 bucket_logger.debug("Loading edges")
                 edges = edge_storage.load_chunk_of_edges(
@@ -948,21 +932,12 @@ class TrainingCoordinator:
             return None
 
     def _maybe_write_checkpoint(
-<<<<<<< HEAD
         self,
         epoch_idx: int,
         edge_path_idx: int,
         edge_chunk_idx: int,
         current_index: int,
     ) -> List[Dict[str, Any]]:
-=======
-            self,
-            epoch_idx: int,
-            edge_path_idx: int,
-            edge_chunk_idx: int,
-            current_index: int,
-    ) -> None:
->>>>>>> b44f6c3... * Bug fixed; recurrent training implemented
 
         config = self.config
 
