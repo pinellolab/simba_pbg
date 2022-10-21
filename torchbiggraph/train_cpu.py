@@ -482,6 +482,7 @@ class TrainingCoordinator:
         if config.init_path is not None:
             self.loadpath_manager = CheckpointManager(config.init_path)
             if config.init_entity_path is not None:
+                logger.info(f"Loading entity embedding from {config.init_entity_path}")
                 # Enlarge the embeddings if there is a change in entity counts
                 # Checkpoint will be enlarge from init_path to new checkpoint path
                 init_entity_storage = ENTITY_STORAGES.make_instance(config.init_entity_path)
