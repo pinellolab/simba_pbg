@@ -257,7 +257,13 @@ class ConfigSchema(Schema):
         metadata={"help": "Interval to amortize weight decay"},
     )
 
-    # data config
+    init_entity_path: Optional[str] = attr.ib(
+        default=None,
+        metadata={
+            "help": "If set, it must be a path to a directory that "
+            "contains initial values of the entities and their offsets "
+        },
+    )
 
     entity_path: str = attr.ib(
         metadata={"help": "The path of the directory containing entity count " "files."}
