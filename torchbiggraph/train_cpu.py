@@ -108,7 +108,10 @@ class Trainer(AbstractBatchProcessor):
             loss = loss + reg
         if model.wd > 0 and random.random() < 1. / model.wd_interval:
             loss = loss + model.wd * model.wd_interval * model.l2_norm()
-        loss.backward()
+        try:
+            loss.backward()
+        except RuntimeError:
+            pass
         self.model_optimizer.step(closure=None)
         for optimizer in self.unpartitioned_optimizers.values():
             optimizer.step(closure=None)

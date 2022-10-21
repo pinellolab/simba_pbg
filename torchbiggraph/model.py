@@ -676,11 +676,11 @@ class MultiRelationEmbedder(nn.Module):
             # positive and negative right-hand side entity is only passed once
             # through the operator.
 
-            if self.lhs_operators[relation_idx] is not None:
-                raise RuntimeError(
-                    "In non-dynamic relation mode there should "
-                    "be only a right-hand side operator"
-                )
+            # if self.lhs_operators[relation_idx] is not None:
+            #     raise RuntimeError(
+            #         "In non-dynamic relation mode there should "
+            #         "be only a right-hand side operator"
+            #     )
 
             # Apply operator to right-hand side, sample negatives on both sides unless
             # one side is disabled.
@@ -695,7 +695,7 @@ class MultiRelationEmbedder(nn.Module):
                 edges.get_relation_type(),
                 relation.lhs,
                 relation.rhs,
-                None,
+                self.lhs_operators[relation_idx],
                 self.rhs_operators[relation_idx],
                 lhs_module,
                 rhs_module,
