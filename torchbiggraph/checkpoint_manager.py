@@ -532,7 +532,7 @@ class CheckpointManager:
 
                 embs = new_embs
                 optim_state = None
-
+                logger.info(f"Loaded entity {entity} partition {part}...")
                 # Save the previous embeddings as the first version (v0)
                 self.storage.save_entity_partition(0, entity, part, embs, optim_state, metadata)
 
