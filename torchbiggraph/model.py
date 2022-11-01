@@ -898,28 +898,16 @@ def make_model(config: ConfigSchema) -> MultiRelationEmbedder:
     lhs_operators: List[Optional[Union[AbstractOperator, AbstractDynamicOperator]]] = []
     rhs_operators: List[Optional[Union[AbstractOperator, AbstractDynamicOperator]]] = []
     for r in config.relations:
-        if r.operator_r != "none" or r.operator_l != "none":
-            lhs_operators.append(
-                instantiate_operator(
-                    r.operator_l, Side.LHS, num_dynamic_rels, config.entity_dimension(r.lhs)
-                )
+        lhs_operators.append(
+            instantiate_operator(
+                r.operator, Side.LHS, num_dynamic_rels, config.entity_dimension(r.lhs)
             )
-            rhs_operators.append(
-                instantiate_operator(
-                    r.operator_r, Side.RHS, num_dynamic_rels, config.entity_dimension(r.rhs)
-                )
+        )
+        rhs_operators.append(
+            instantiate_operator(
+                r.operator, Side.RHS, num_dynamic_rels, config.entity_dimension(r.rhs)
             )
-        else:
-            lhs_operators.append(
-                instantiate_operator(
-                    r.operator, Side.LHS, num_dynamic_rels, config.entity_dimension(r.lhs)
-                )
-            )
-            rhs_operators.append(
-                instantiate_operator(
-                    r.operator, Side.RHS, num_dynamic_rels, config.entity_dimension(r.rhs)
-                )
-            )
+        )
 
     comparator_class = COMPARATORS.get_class(config.comparator)
     comparator = comparator_class()
