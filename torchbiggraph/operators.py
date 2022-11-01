@@ -355,8 +355,8 @@ def instantiate_operator(
     if num_dynamic_rels > 0:
         dynamic_operator_class = DYNAMIC_OPERATORS.get_class(operator)
         return dynamic_operator_class(dim, num_dynamic_rels)
-    # elif side is Side.LHS:
-    #     return None
+    elif side is Side.LHS:
+        return None
     else:
         operator_class = OPERATORS.get_class(operator)
         return operator_class(dim)
