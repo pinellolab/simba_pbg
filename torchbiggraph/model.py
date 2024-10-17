@@ -73,7 +73,33 @@ class SimpleEmbedding(AbstractEmbedding):
                 low=0, high=self.weight.size(0), size=dims, device=self.weight.device
             )
         )
+    
+class CovariateEmbedding(AbstractEmbedding):
+    def __init__(self, weight: nn.Parameter, cov_weight: nn.Parameter, max_norm: Optional[float] = None):
+        super().__init__()
+        self.weight: nn.Parameter = weight
+        self.cov_weight: nn.Parameter = cov_weight
+        self.max_norm: Optional[float] = max_norm
 
+    def forward(self, input_: EntityList) -> FloatTensorType:
+        return self.get(input_.to_tensor())
+
+    def get(self, input_: LongTensorType) -> FloatTensorType:
+        return F.embedding(input_, self.weight, max_norm=self.max_norm, sparse=True)
+
+    def get_all_entities(self) -> FloatTensorType:
+        return self.get(
+            torch.arange(
+                self.weight.size(0), dtype=torch.long, device=self.weight.device
+            )
+        )
+
+    def sample_entities(self, *dims: int) -> FloatTensorType:
+        return self.get(
+            torch.randint(
+                low=0, high=self.weight.size(0), size=dims, device=self.weight.device
+            )
+        )
 
 class FeaturizedEmbedding(AbstractEmbedding):
     def __init__(self, weight: nn.Parameter, max_norm: Optional[float] = None):
@@ -407,6 +433,8 @@ class MultiRelationEmbedder(nn.Module):
         wd: float,
         wd_interval: int,
         global_emb: bool = False,
+        entity_cat_covariates: Optional[Dict[str, LongTensorType]] = None,
+        entity_cont_covariates: Optional[Dict[str, LongTensorType]] = None,
         max_norm: Optional[float] = None,
         num_dynamic_rels: int = 0,
         half_precision: bool = False,
@@ -442,6 +470,56 @@ class MultiRelationEmbedder(nn.Module):
             self.global_embs = global_embs
         else:
             self.global_embs: Optional[nn.ParameterDict] = None
+        
+        if entity_cat_covariates is not None:
+            cov_dim=None
+            d_to_categories = {}
+            for entity, covs in entity_cat_covariates.items():
+                if cov_dim is None:
+                    cov_dim = covs.shape[1]
+                    d_to_categories = {d : [] for d in range(cov_dim)}
+                elif cov_dim != covs.shape[1]:
+                    raise Exception(f"Covs should share the same dimensions {cov_dim}, recieved {covs.shape[1]} for {entity}.")
+                
+                for d in range(cov_dim):
+                    d_to_categories[d].append(torch.unique(covs[:, d]))
+            if cov_dim is None:
+                self.cat_cov_to_embs: Optional[nn.ParameterDict] = None
+                self.entity_cat_covariates: Optional[Dict[str, LongTensorType]] = None
+            else:
+                cat_cov_to_embs = nn.ParameterDict()
+                for d in range(cov_dim):
+                    unique_cats = torch.unique(torch.cat(d_to_categories[d], axis=0))
+                    if not len(unique_cats) != max(unique_cats) + 1:
+                        raise Exception("Category should be integers starting from 0.")
+                    cat_cov_to_embs[d] = nn.Parameter(torch.zeros((len(unique_cats), default_dim))) # @TODO: This assumes all entity share default_dim
+                self.cat_cov_to_embs = cat_cov_to_embs
+                self.entity_cat_covariates = entity_cat_covariates
+        else:
+            self.cat_cov_to_embs: Optional[nn.ParameterDict] = None
+            self.entity_cat_covariates: Optional[Dict[str, LongTensorType]] = None
+
+        if entity_cont_covariates is not None:
+            cov_dim=None
+            for entity, covs in entity_cont_covariates.items():
+                if cov_dim is None:
+                    cov_dim = covs.shape[1]
+                    d_to_categories = {d : [] for d in range(cov_dim)}
+                elif cov_dim != covs.shape[1]:
+                    raise Exception(f"Covs should share the same dimensions {cov_dim}, recieved {covs.shape[1]} for {entity}.")
+                
+            if cov_dim is None:
+                self.cont_cov_to_embs: Optional[nn.ParameterDict] = None
+                self.entity_cont_covariates: Optional[Dict[str, FloatTensorType]] = None
+            else:
+                cont_cov_to_embs = nn.ParameterDict()
+                for d in range(cov_dim):
+                    cont_cov_to_embs[d] = nn.Parameter(torch.ones((default_dim,)))
+                self.entity_cat_covariates = entity_cat_covariates
+        else:
+            self.cont_cov_to_embs: Optional[nn.ParameterDict] = None
+            self.entity_cont_covariates: Optional[Dict[str, FloatTensorType]] = None
+
 
         self.max_norm: Optional[float] = max_norm
         self.half_precision = half_precision
@@ -454,12 +532,21 @@ class MultiRelationEmbedder(nn.Module):
             emb = FeaturizedEmbedding(weights, max_norm=self.max_norm)
         else:
             emb = SimpleEmbedding(weights, max_norm=self.max_norm)
+        if self.entity_cat_covariates is not None and entity in self.entity_cat_covariates.keys():
+            entity_cat_covariates_idx = self.entity_cat_covariates[entity]
+            for d, cat_embs in self.cat_cov_to_embs.items():
+                emb += F.embedding(entity_cat_covariates_idx[d, :], cat_embs, padding_idx=0)
+        if self.entity_cont_covariates is not None and entity in self.entity_cont_covariates.keys():
+            entity_cont_covariates_vals = self.entity_cont_covariates[entity]
+            for d, cont_embs in self.cont_cov_to_embs.items():
+                emb += cont_embs * entity_cont_covariates_vals[d, :]
         side.pick(self.lhs_embs, self.rhs_embs)[self.EMB_PREFIX + entity] = emb
 
     def set_all_embeddings(self, holder: EmbeddingHolder, bucket: Bucket) -> None:
         # This could be a method of the EmbeddingHolder, but it's here as
         # utils.py cannot depend on model.py.
-        for entity in holder.lhs_unpartitioned_types:
+        #@TODO set covariates
+        for entity in holder.lhs_unpartitioned_types: #entity: str?
             self.set_embeddings(
                 entity, Side.LHS, holder.unpartitioned_embeddings[entity]
             )
@@ -936,6 +1023,8 @@ def make_model(config: ConfigSchema) -> MultiRelationEmbedder:
         wd=config.wd,
         wd_interval=config.wd_interval,
         global_emb=config.global_emb,
+        entity_cat_covariates=config.entity_cat_covariates,
+        entity_cont_covariates=config.entity_cont_covariates,
         max_norm=config.max_norm,
         num_dynamic_rels=num_dynamic_rels,
         half_precision=config.half_precision,

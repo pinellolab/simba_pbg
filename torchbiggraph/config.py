@@ -20,6 +20,7 @@ from typing import Any, ClassVar, Dict, List, Optional
 
 import attr
 from attr.validators import optional
+from torchbiggraph.types import LongTensorType, FloatTensorType
 from torchbiggraph.schema import (
     DeepTypeError,
     Schema,
@@ -201,6 +202,18 @@ class ConfigSchema(Schema):
             "embeddings from the comparator and instead use it "
             "as a bias, adding back to the score. Makes sense "
             "for logistic and softmax loss functions."
+        },
+    )
+    entity_cat_covariates: Dict[str, LongTensorType] = attr.ib(
+        default=None,
+        metadata={
+            "help": "Entity types to categorical covariates (n_covarirates x n_entity) cateogry assignment"
+        },
+    )
+    entity_cont_covariates: Dict[str, FloatTensorType] = attr.ib(
+        default=None,
+        metadata={
+            "help": "Entity types to categorical covariates (n_covarirates x n_entity) cateogry assignment"
         },
     )
     loss_fn: str = attr.ib(

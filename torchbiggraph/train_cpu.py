@@ -490,7 +490,7 @@ class TrainingCoordinator:
             dimension = config.entity_dimension(entity)
             embs = torch.FloatTensor(s).view(-1, dimension)[:count]
             embs, optimizer = self._load_embeddings(entity, UNPARTITIONED, out=embs)
-            holder.unpartitioned_embeddings[entity] = embs
+            holder.unpartitioned_embeddings[entity] = embs #@TODO modify embs here?
             trainer.unpartitioned_optimizers[entity] = optimizer
 
         # start communicating shared parameters with the parameter server
@@ -604,7 +604,7 @@ class TrainingCoordinator:
                 self.bucket_logger = bucket_logger
 
                 io_bytes = self._swap_partitioned_embeddings(old_b, cur_b, old_stats)
-                self.model.set_all_embeddings(holder, cur_b)
+                self.model.set_all_embeddings(holder, cur_b) #@TODO set w cov?
 
                 current_index = (
                     iteration_manager.iteration_idx + 1
