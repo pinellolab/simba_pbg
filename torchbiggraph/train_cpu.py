@@ -257,9 +257,10 @@ class TrainingCoordinator:
         tag_logs_with_process_name(f"Trainer-{rank}")
         self.config = config
         if config.verbose > 0:
-            import pprint
+            logger.setLevel(logging.DEBUG)
+        #     import pprint
 
-            pprint.PrettyPrinter().pprint(config.to_dict())
+        #     pprint.PrettyPrinter().pprint(config.to_dict())
 
         logger.info("Loading entity counts...")
         entity_storage = ENTITY_STORAGES.make_instance(config.entity_path)
@@ -271,7 +272,7 @@ class TrainingCoordinator:
 
         # Figure out how many lhs and rhs partitions we need
         holder = self.holder = EmbeddingHolder(config)
-
+        print(f"@Holder: {holder}")
         logger.debug(
             f"nparts {holder.nparts_lhs} {holder.nparts_rhs} "
             f"types {holder.lhs_partitioned_types} {holder.rhs_partitioned_types}"
@@ -557,6 +558,8 @@ class TrainingCoordinator:
                 )
 
         last_chunk_loss = float("inf")
+        #@DEBUG
+        print(f"entity_counts:{self.entity_counts}")
         for epoch_idx, edge_path_idx, edge_chunk_idx in iteration_manager:
             logger.info(
                 f"Starting epoch {epoch_idx + 1} / {iteration_manager.num_epochs}, "
@@ -604,7 +607,7 @@ class TrainingCoordinator:
                 self.bucket_logger = bucket_logger
 
                 io_bytes = self._swap_partitioned_embeddings(old_b, cur_b, old_stats)
-                self.model.set_all_embeddings(holder, cur_b) #@TODO set w cov?
+                self.model.set_all_embeddings(holder, cur_b, self.entity_counts) #@TODO set w cov?
 
                 current_index = (
                     iteration_manager.iteration_idx + 1

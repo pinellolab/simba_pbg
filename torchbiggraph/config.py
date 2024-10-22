@@ -17,7 +17,7 @@ import uuid
 from enum import Enum
 from itertools import chain
 from typing import Any, ClassVar, Dict, List, Optional
-
+import torch
 import attr
 from attr.validators import optional
 from torchbiggraph.types import LongTensorType, FloatTensorType
@@ -543,6 +543,7 @@ class ConfigSchema(Schema):
     def entity_dimension(self, entity_type: str) -> int:
         """get the dimension for an entity"""
         return self.entities[entity_type].dimension or self.dimension
+
 
 
 # TODO make this a non-inplace operation

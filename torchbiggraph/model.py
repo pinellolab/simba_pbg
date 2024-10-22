@@ -49,23 +49,37 @@ class AbstractEmbedding(nn.Module, ABC):
 
 
 class SimpleEmbedding(AbstractEmbedding):
-    def __init__(self, weight: nn.Parameter, max_norm: Optional[float] = None):
+    def __init__(self, weight: nn.Parameter, max_norm: Optional[float] = None, index: Optional[Tuple[int, int]] = None):
         super().__init__()
         self.weight: nn.Parameter = weight
         self.max_norm: Optional[float] = max_norm
+        self.cov_added_weight: Optional[FloatTensorType] = None
+        if index is None:
+            self.index = (0, self.weight.shape[0])
+        self.index = index
 
     def forward(self, input_: EntityList) -> FloatTensorType:
         return self.get(input_.to_tensor())
 
     def get(self, input_: LongTensorType) -> FloatTensorType:
-        return F.embedding(input_, self.weight, max_norm=self.max_norm, sparse=True)
+        if self.cov_added_weight is None:
+            return F.embedding(input_, self.weight, max_norm=self.max_norm)#, sparse=True)
+        else:
+            return F.embedding(input_, self.cov_added_weight, max_norm=self.max_norm)#, sparse=True)
 
     def get_all_entities(self) -> FloatTensorType:
-        return self.get(
-            torch.arange(
-                self.weight.size(0), dtype=torch.long, device=self.weight.device
+        if self.cov_added_weight is None:
+            return self.get(
+                torch.arange(
+                    self.weight.size(0), dtype=torch.long, device=self.weight.device
+                )
             )
-        )
+        else:
+            return self.get(
+                torch.arange(
+                    self.cov_added_weight.size(0), dtype=torch.long, device=self.weight.device
+                )
+            )
 
     def sample_entities(self, *dims: int) -> FloatTensorType:
         return self.get(
@@ -73,33 +87,19 @@ class SimpleEmbedding(AbstractEmbedding):
                 low=0, high=self.weight.size(0), size=dims, device=self.weight.device
             )
         )
+
+    def add_cat_cov(self, entity_cat_covariates_idx, covariate_embs):
+        self.cov_added_weight = self.weight + 0
+        for d, cat_embs in covariate_embs.items():
+            emb_index = entity_cat_covariates_idx[self.index[0]:self.index[1], int(d)].detach()
+            self.cov_added_weight = self.cov_added_weight + F.embedding(emb_index, cat_embs, padding_idx=0)#, sparse=True)
     
-class CovariateEmbedding(AbstractEmbedding):
-    def __init__(self, weight: nn.Parameter, cov_weight: nn.Parameter, max_norm: Optional[float] = None):
-        super().__init__()
-        self.weight: nn.Parameter = weight
-        self.cov_weight: nn.Parameter = cov_weight
-        self.max_norm: Optional[float] = max_norm
-
-    def forward(self, input_: EntityList) -> FloatTensorType:
-        return self.get(input_.to_tensor())
-
-    def get(self, input_: LongTensorType) -> FloatTensorType:
-        return F.embedding(input_, self.weight, max_norm=self.max_norm, sparse=True)
-
-    def get_all_entities(self) -> FloatTensorType:
-        return self.get(
-            torch.arange(
-                self.weight.size(0), dtype=torch.long, device=self.weight.device
-            )
-        )
-
-    def sample_entities(self, *dims: int) -> FloatTensorType:
-        return self.get(
-            torch.randint(
-                low=0, high=self.weight.size(0), size=dims, device=self.weight.device
-            )
-        )
+    def add_cont_cov(self, entity_cont_covariates_val, covariate_embs):
+        if self.cov_added_weight is None:
+            self.cov_added_weight = self.weight + 0
+        for d, cont_embs in covariate_embs.items():
+            self.cov_added_weight = self.cov_added_weight + entity_cont_covariates_val[:, int(d)][self.index[0]:self.index[1], None].detach() * cont_embs[None, :]
+    
 
 class FeaturizedEmbedding(AbstractEmbedding):
     def __init__(self, weight: nn.Parameter, max_norm: Optional[float] = None):
@@ -470,7 +470,9 @@ class MultiRelationEmbedder(nn.Module):
             self.global_embs = global_embs
         else:
             self.global_embs: Optional[nn.ParameterDict] = None
-        
+
+        self.cat_cov_to_embs: Optional[nn.ParameterDict] = None
+        self.entity_cat_covariates: Optional[Dict[str, LongTensorType]] = None
         if entity_cat_covariates is not None:
             cov_dim=None
             d_to_categories = {}
@@ -480,25 +482,20 @@ class MultiRelationEmbedder(nn.Module):
                     d_to_categories = {d : [] for d in range(cov_dim)}
                 elif cov_dim != covs.shape[1]:
                     raise Exception(f"Covs should share the same dimensions {cov_dim}, recieved {covs.shape[1]} for {entity}.")
-                
                 for d in range(cov_dim):
                     d_to_categories[d].append(torch.unique(covs[:, d]))
-            if cov_dim is None:
-                self.cat_cov_to_embs: Optional[nn.ParameterDict] = None
-                self.entity_cat_covariates: Optional[Dict[str, LongTensorType]] = None
-            else:
+            if cov_dim is not None:
                 cat_cov_to_embs = nn.ParameterDict()
                 for d in range(cov_dim):
                     unique_cats = torch.unique(torch.cat(d_to_categories[d], axis=0))
-                    if not len(unique_cats) != max(unique_cats) + 1:
-                        raise Exception("Category should be integers starting from 0.")
-                    cat_cov_to_embs[d] = nn.Parameter(torch.zeros((len(unique_cats), default_dim))) # @TODO: This assumes all entity share default_dim
+                    if len(unique_cats) != max(unique_cats) + 1:
+                        raise Exception(f"Category should be integers starting from 0. Unique categories: {unique_cats}, max category value: {max(unique_cats)}")
+                    cat_cov_to_embs[str(d)] = nn.Parameter(torch.zeros((len(unique_cats), default_dim))) # @TODO: This assumes all entity share default_dim
                 self.cat_cov_to_embs = cat_cov_to_embs
                 self.entity_cat_covariates = entity_cat_covariates
-        else:
-            self.cat_cov_to_embs: Optional[nn.ParameterDict] = None
-            self.entity_cat_covariates: Optional[Dict[str, LongTensorType]] = None
 
+        self.cont_cov_to_embs: Optional[nn.ParameterDict] = None
+        self.entity_cont_covariates: Optional[Dict[str, FloatTensorType]] = None
         if entity_cont_covariates is not None:
             cov_dim=None
             for entity, covs in entity_cont_covariates.items():
@@ -507,18 +504,13 @@ class MultiRelationEmbedder(nn.Module):
                     d_to_categories = {d : [] for d in range(cov_dim)}
                 elif cov_dim != covs.shape[1]:
                     raise Exception(f"Covs should share the same dimensions {cov_dim}, recieved {covs.shape[1]} for {entity}.")
-                
-            if cov_dim is None:
-                self.cont_cov_to_embs: Optional[nn.ParameterDict] = None
-                self.entity_cont_covariates: Optional[Dict[str, FloatTensorType]] = None
-            else:
+            if cov_dim is not None:
                 cont_cov_to_embs = nn.ParameterDict()
                 for d in range(cov_dim):
-                    cont_cov_to_embs[d] = nn.Parameter(torch.ones((default_dim,)))
-                self.entity_cat_covariates = entity_cat_covariates
-        else:
-            self.cont_cov_to_embs: Optional[nn.ParameterDict] = None
-            self.entity_cont_covariates: Optional[Dict[str, FloatTensorType]] = None
+                    cont_cov_to_embs[str(d)] = nn.Parameter(torch.ones((default_dim,)))
+                self.cont_cov_to_embs = cont_cov_to_embs
+                self.entity_cont_covariates = entity_cont_covariates
+            
 
 
         self.max_norm: Optional[float] = max_norm
@@ -527,22 +519,25 @@ class MultiRelationEmbedder(nn.Module):
         self.wd = wd
         self.wd_interval = wd_interval
 
-    def set_embeddings(self, entity: str, side: Side, weights: nn.Parameter) -> None:
+    def set_embeddings(self, entity: str, side: Side, weights: nn.Parameter, idx_start_end = None) -> None:
+        if (self.entity_cat_covariates is not None and entity in self.entity_cat_covariates.keys()) or (self.entity_cont_covariates is not None and entity in self.entity_cont_covariates.keys()): 
+            if idx_start_end is None:
+                idx_start_end = (0, weights.shape[0])
+        # if hasattr(self, "entity_cat_covariates") and entity in self.entity_cat_covariates.keys():
+        #     entity_cat_covariates_idx = self.entity_cat_covariates[entity]
+        #     for d, cat_embs in self.cat_cov_to_embs.items():
+        #         weights = weights + F.embedding(entity_cat_covariates_idx[int(d), idx_start_end[0]:idx_start_end[1]], cat_embs, padding_idx=0)
+        # if hasattr(self, "entity_cont_covariates") and entity in self.entity_cont_covariates.keys():
+        #     entity_cont_covariates_vals = self.entity_cont_covariates[entity]
+        #     for d, cont_embs in self.cont_cov_to_embs.items():
+        #         weights = weights + entity_cont_covariates_vals[:, int(d)][idx_start_end[0]:idx_start_end[1], None] * cont_embs[None, :] #n_entity x dim
         if self.entities[entity].featurized:
-            emb = FeaturizedEmbedding(weights, max_norm=self.max_norm)
+            emb = FeaturizedEmbedding(weights, max_norm=self.max_norm, index=idx_start_end)
         else:
-            emb = SimpleEmbedding(weights, max_norm=self.max_norm)
-        if self.entity_cat_covariates is not None and entity in self.entity_cat_covariates.keys():
-            entity_cat_covariates_idx = self.entity_cat_covariates[entity]
-            for d, cat_embs in self.cat_cov_to_embs.items():
-                emb += F.embedding(entity_cat_covariates_idx[d, :], cat_embs, padding_idx=0)
-        if self.entity_cont_covariates is not None and entity in self.entity_cont_covariates.keys():
-            entity_cont_covariates_vals = self.entity_cont_covariates[entity]
-            for d, cont_embs in self.cont_cov_to_embs.items():
-                emb += cont_embs * entity_cont_covariates_vals[d, :]
+            emb = SimpleEmbedding(weights, max_norm=self.max_norm, index=idx_start_end)
         side.pick(self.lhs_embs, self.rhs_embs)[self.EMB_PREFIX + entity] = emb
 
-    def set_all_embeddings(self, holder: EmbeddingHolder, bucket: Bucket) -> None:
+    def set_all_embeddings(self, holder: EmbeddingHolder, bucket: Bucket, entity_counts = None) -> None:
         # This could be a method of the EmbeddingHolder, but it's here as
         # utils.py cannot depend on model.py.
         #@TODO set covariates
@@ -556,11 +551,11 @@ class MultiRelationEmbedder(nn.Module):
             )
         for entity in holder.lhs_partitioned_types:
             self.set_embeddings(
-                entity, Side.LHS, holder.partitioned_embeddings[entity, bucket.lhs]
+                entity, Side.LHS, holder.partitioned_embeddings[entity, bucket.lhs], (sum(entity_counts[entity][:bucket.lhs]), sum(entity_counts[entity][:bucket.lhs + 1]) if entity_counts is not None else None)
             )
         for entity in holder.rhs_partitioned_types:
             self.set_embeddings(
-                entity, Side.RHS, holder.partitioned_embeddings[entity, bucket.rhs]
+                entity, Side.RHS, holder.partitioned_embeddings[entity, bucket.rhs], (sum(entity_counts[entity][:bucket.rhs]), sum(entity_counts[entity][:bucket.rhs + 1]) if entity_counts is not None else None)
             )
 
     def clear_all_embeddings(self) -> None:
@@ -734,8 +729,24 @@ class MultiRelationEmbedder(nn.Module):
         relation = self.relations[relation_idx]
         lhs_module: AbstractEmbedding = self.lhs_embs[self.EMB_PREFIX + relation.lhs]
         rhs_module: AbstractEmbedding = self.rhs_embs[self.EMB_PREFIX + relation.rhs]
+        if self.entity_cat_covariates is not None:
+            if relation.lhs in self.entity_cat_covariates.keys():
+                try:
+                    lhs_module.add_cat_cov(self.entity_cat_covariates[relation.lhs], self.cat_cov_to_embs)
+                except RuntimeError as e:
+                    raise RuntimeError(f"LHS:{relation.lhs}\nentity_cat_covariates:{ {k:v.shape for k, v in self.entity_cat_covariates.items()} }\ncat_cov_to_embs:{ {k:v.shape for k, v in self.cat_cov_to_embs.items()} }\nindex_index:{lhs_module.index}\nindex:{self.entity_cat_covariates[relation.lhs]}\n partition_index:{self.entity_cat_covariates[relation.lhs][lhs_module.index[0]:lhs_module.index[1]]}") from e
+                    
+            if relation.rhs in self.entity_cat_covariates.keys():
+                rhs_module.add_cat_cov(self.entity_cat_covariates[relation.rhs], self.cat_cov_to_embs)
+        if self.entity_cont_covariates is not None:
+            if relation.lhs in self.entity_cont_covariates.keys():
+                lhs_module.add_cont_cov(self.entity_cont_covariates[relation.lhs], self.cont_cov_to_embs)
+            if relation.rhs in self.entity_cont_covariates.keys():
+                rhs_module.add_cont_cov(self.entity_cont_covariates[relation.rhs], self.cont_cov_to_embs)
+
         lhs_pos: FloatTensorType = lhs_module(edges.lhs)
         rhs_pos: FloatTensorType = rhs_module(edges.rhs)
+
 
         if relation.all_negs:
             chunk_size = num_pos

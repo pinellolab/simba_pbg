@@ -10,6 +10,9 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from inspect import isclass
 from itertools import chain
+import numpy as np
+from numpy import ndarray
+import torch
 from typing import Any, ClassVar, Dict, List, Optional, Sized, Type, TypeVar, Union
 
 import attr
@@ -93,6 +96,20 @@ class Mapper(ABC):
             raise DeepTypeError("Not a str")
         return data
 
+    @staticmethod
+    def map_array(data: Any) -> str:
+        if not isinstance(data, ndarray):
+            raise DeepTypeError("Not an array")
+        return data
+
+    @staticmethod
+    def map_tensor(data: Any) -> str:
+        if not isinstance(data, torch.Tensor):
+            if not isinstance(data, ndarray):
+                raise DeepTypeError("Not a tensor")
+            return torch.from_numpy(data)
+        return data
+
     @abstractmethod
     def map_enum(self, data: Any, type_: Type[Enum]) -> Any:
         pass
@@ -122,6 +139,7 @@ class Mapper(ABC):
                     value, value_type
                 )
             except DeepTypeError as err:
+                print(f"key_type:{key_type}, value_type:{value_type}")
                 err.prepend_key(key)
                 raise err
         return result
@@ -150,6 +168,10 @@ class Mapper(ABC):
             return self.map_str(data)
         if isclass(type_) and issubclass(type_, Enum):
             return self.map_enum(data, type_)
+        if isclass(type_) and issubclass(type_, ndarray):
+            return self.map_array(data)
+        if isclass(type_) and issubclass(type_, torch.Tensor):
+            return self.map_tensor(data)
         if has_origin(type_, list):
             return self.map_list(data, type_)
         if has_origin(type_, dict):
@@ -188,6 +210,56 @@ class Loader(Mapper):
             return type_[data.upper()]
         except KeyError:
             raise DeepTypeError("Unknown option: %s" % data) from None
+    
+    @staticmethod
+    def map_array(data: Any) -> str:
+        if isinstance(data, list):
+            return np.array(data)
+        if not isinstance(data, ndarray):
+            raise DeepTypeError("Not an array")
+        return data
+
+    @staticmethod
+    def map_tensor(data: Any) -> str:
+        if isinstance(data, list):
+            return torch.from_numpy(np.array(data))
+        if not isinstance(data, torch.Tensor):
+            if not isinstance(data, ndarray):
+                raise DeepTypeError("Not a tensor")
+            return torch.from_numpy(data)
+        return data
+    
+    def map_with_type(self, data: Any, type_: Type) -> Any:
+        # Needs to come first as in this case type_ is an instance, not a class.
+        try:
+            base_type = unpack_optional(type_)
+        except TypeError:
+            pass
+        else:
+            if data is None:
+                return None
+            return self.map_with_type(data, base_type)
+        if isclass(type_) and issubclass(type_, bool):
+            return self.map_bool(data)
+        if isclass(type_) and issubclass(type_, int):
+            return self.map_int(data)
+        if isclass(type_) and issubclass(type_, float):
+            return self.map_float(data)
+        if isclass(type_) and issubclass(type_, str):
+            return self.map_str(data)
+        if isclass(type_) and issubclass(type_, Enum):
+            return self.map_enum(data, type_)
+        if isclass(type_) and issubclass(type_, ndarray):
+            return self.map_array(data)
+        if isclass(type_) and issubclass(type_, torch.Tensor):
+            return self.map_tensor(data)
+        if has_origin(type_, list):
+            return self.map_list(data, type_)
+        if has_origin(type_, dict):
+            return self.map_dict(data, type_)
+        if isclass(type_) and issubclass(type_, Schema):
+            return self.map_schema(data, type_)
+        raise NotImplementedError("Unknown type: %s" % type_)
 
     def map_schema(self, data: Any, type_: Type["Schema"]) -> "Schema":
         if not isinstance(data, dict):
@@ -227,6 +299,20 @@ class Dumper(Mapper):
         if not isinstance(data, type_):
             raise TypeError("Not a %s" % type_.__name__)
         return data.name.lower()
+
+    @staticmethod
+    def map_array(data: Any) -> str:
+        if not isinstance(data, ndarray):
+            raise DeepTypeError("Not an array")
+        return data.tolist()
+
+    @staticmethod
+    def map_tensor(data: Any) -> str:
+        if not isinstance(data, torch.Tensor):
+            if not isinstance(data, ndarray):
+                raise DeepTypeError("Not a tensor")
+            return data.tolist()
+        return data.cpu().numpy().tolist()
 
     def map_schema(self, data: Any, type_: Type["Schema"]) -> Dict[str, Any]:
         result = {}

@@ -7,7 +7,7 @@
 # LICENSE.txt file in the root directory of this source tree.
 
 import logging
-import multiprocessing as mp
+import torch.multiprocessing as mp
 import multiprocessing.pool  # noqa: F401
 import os
 import os.path
@@ -406,6 +406,25 @@ class EmbeddingHolder:
         self.partitioned_embeddings: Dict[
             Tuple[EntityName, Partition], torch.nn.Parameter
         ] = {}
+
+    def __repr__(self) -> str:
+        return (
+            f"EmbeddingHolder(\n"
+            f"  nparts_lhs={self.nparts_lhs!r},\n"
+            f"  nparts_rhs={self.nparts_rhs!r},\n"
+            f"  lhs_unpartitioned_types={self.lhs_unpartitioned_types!r},\n"
+            f"  lhs_partitioned_types={self.lhs_partitioned_types!r},\n"
+            f"  rhs_unpartitioned_types={self.rhs_unpartitioned_types!r},\n"
+            f"  rhs_partitioned_types={self.rhs_partitioned_types!r},\n"
+            f"  unpartitioned_embeddings={{\n    {self._format_dict(self.unpartitioned_embeddings)}\n  }},\n"
+            f"  partitioned_embeddings={{\n    {self._format_dict(self.partitioned_embeddings)}\n  }}\n"
+            f")"
+        )
+    def _format_dict(self, d: Dict) -> str:
+        return ',\n    '.join(f"{k!r}: {self._format_tensor(v)}" for k, v in d.items())
+
+    def _format_tensor(self, tensor: torch.nn.Parameter) -> str:
+        return f"torch.nn.Parameter(shape={list(tensor.shape)}, dtype={tensor.dtype})"
 
 
 # compute a randomized AUC using a fixed number of sample points

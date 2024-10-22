@@ -72,6 +72,26 @@ MODEL_STATE_DICT_MAPPINGS = [
         public="entities/{type}/global_embedding",
         fields=["type"],
     ),
+    TwoWayMapping(
+        private="cat_cov_to_embs.{d}",
+        public="entities/cat_cov_to_embs/{d}",
+        fields=["d"],
+    ),
+    TwoWayMapping(
+        private="cont_cov_to_embs.{d}",
+        public="entities/cont_cov_to_embs/{d}",
+        fields=["d"],
+    ),
+    TwoWayMapping(
+        private="entity_cat_covariates.{d}",
+        public="entities/entity_cat_covariates/{d}",
+        fields=["d"],
+    ),
+    TwoWayMapping(
+        private="entity_cont_covariates.{d}",
+        public="entities/entity_cont_covariates/{d}",
+        fields=["d"],
+    ),
 ]
 
 
